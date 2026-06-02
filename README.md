@@ -5,7 +5,7 @@ Can a fungus's scent reveal what kind of organism it is?
 This repo applies Random Forest classification to gas chromatography–mass
 spectrometry (GC-MS) volatile organic compound (VOC) profiles from 43 fungal
 species to ask whether VOC emissions systematically differ between
-**Ascomycota** and **Basidiomycota** — and which specific compounds drive that
+***Ascomycota*** and ***Basidiomycota*** — and which specific compounds drive that
 discrimination.
 
 📄 **[View the full analysis](fungal_voc_random_forest.md)**
