@@ -1,45 +1,34 @@
-Fungal VOC profiles discriminate between phyla: a Random Forest approach
+Can you smell the difference? Identifying fungal discriminating
+volatiles using Random Forest classification
 ================
 Lakshya Katariya
-2026-06-01
+2026-06-07
 
 ## Overview
 
-Fungi communicate chemically through volatile organic compounds (VOCs).
-But do these scents encode something deeper — like *which phylum* a
-fungus belongs to?
-
-In [Katariya et
+Fungi can communicate chemically through volatile organic compounds
+(VOCs). In [Katariya et
 al. (2017)](https://link.springer.com/article/10.1007/s10886-017-0902-4),
 we showed that fungus-farming termites discriminate their crop fungus
-from a parasitic weed using VOC profiles alone — without visual contact.
-Random Forest classification on GC-MS data identified the candidate
-compounds driving that discrimination.
+(*Termitomyces*) from a parasitic weed (*Pseudoxylaria*) using VOC
+profiles alone — without visual contact. Random Forest classification on
+GC-MS chemical profiles identified the candidate volatile compounds
+driving that discrimination.
 
-Here I apply the same analytical approach to a publicly-available
-dataset from [Guo et
-al. (2021)](https://doi.org/10.1038/s42003-021-02198-8), who measured
-comprehensive VOC profiles from 43 fungal species. Using phylum-level
-metadata from Supplementary Table S1, I compare **Ascomycota** and
-**Basidiomycota** — the two major fungal phyla in the dataset — and ask:
-do their VOC profiles differ systematically, and which compounds carry
-the most discriminatory signal?
+This document has two parts:
 
-Random Forest is used here as a classification tool: the goal is to
-identify candidate discriminating compounds, following the analytical
-approach in Katariya et al. (2017).
+- **Part 1** replicates the Random Forest analysis from Katariya et
+  al. (2017) using the published supplementary data from that paper —
+  *Termitomyces* vs. *Pseudoxylaria* VOC profiles.
+- **Part 2** extends the same analytical framework to a broader public
+  dataset from [Guo et
+  al. (2021)](https://doi.org/10.1038/s42003-021-02198-8), asking
+  whether VOC profiles discriminate fungal phyla (Ascomycota
+  vs. Basidiomycota) across 39 species.
 
-------------------------------------------------------------------------
-
-## Data source
-
-- **Paper:** Guo et al. (2021). *Volatile organic compound patterns
-  predict fungal trophic mode and lifestyle.* Communications Biology
-  4:673.
-- **VOC data:** Supplementary Table S4 (GC-MS emission intensities),
-  available at <https://osf.io/bva2q>.
-- **Metadata:** Supplementary Table S1 (phylum assignments), same
-  source.
+Random Forest is used throughout as a classification tool — the goal
+here is simpler - identify candidate discriminating compounds (not to
+build a predictive model for deployment).
 
 ------------------------------------------------------------------------
 
@@ -57,25 +46,392 @@ library(foreach)       # foreach loop syntax
 
 ------------------------------------------------------------------------
 
-## 1. Load and prepare VOC data
+# Part 1: Replication — *Termitomyces* vs. *Pseudoxylaria*
 
-Table S4 has compounds as rows and fungal species as columns — the
-transpose of what `randomForest()` expects. We drop the `Mean` and `SD`
-summary columns, which are not individual observations. We also retain
-only compounds with identified names, excluding rows where the compound
-is recorded only as a mass-to-charge ratio (m/z), as these cannot be
-meaningfully used downstream.
+## Data source
+
+VOC emission data are taken from Supplementary Table S1 of:
+
+> Katariya L, Ramesh PB, Gopalappa T et al. (2017). *Fungus-Farming
+> Termites Selectively Bury Weedy Fungi that Smell Different from Crop
+> Fungi.* Journal of Chemical Ecology 43:986–995.
+> <https://doi.org/10.1007/s10886-017-0902-4>
+
+The table reports proportional VOC emission intensities for 8
+*Termitomyces* replicates (crop fungus) and 8 *Pseudoxylaria* replicates
+(weedy fungus), across 40 identified volatile compounds from a
+representative GC-MS dataset (dataset \#7 in the paper). The original
+analysis used 16 datasets; this replication uses dataset \#7 as a
+representative example, consistent with the paper’s Fig. 2c.
+
+``` r
+# Data entered directly from Table S1 of Katariya et al. (2017)
+# Rows = compounds, Columns = replicates
+# T = Termitomyces (crop), P = Pseudoxylaria (weed)
+
+voc_p1 <- tribble(
+  ~compound,               ~T16a,  ~T20b,  ~T21b,  ~T77a,  ~T90b,  ~T92b,  ~TG4b,  ~TG5b,  ~P19b,  ~P20b,  ~P38b,  ~P57a,  ~P63b,  ~P65b,  ~P96a,  ~PG4a,
+  "octen_3_ol",            0.105,  0.033,  0,      0,      0.070,  0.014,  0.620,  0.037,  0.019,  0.018,  0.179,  0,      0.006,  0,      0.013,  0,
+  "x3_octanone",           0.181,  0.080,  0,      0,      0.243,  0.035,  0.376,  0.056,  0.011,  0.031,  0.068,  0.021,  0.025,  0.001,  0.025,  0.033,
+  "x3_octanol",            0,      0,      0,      0,      0.006,  0,      0.004,  0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "benzaldehyde",          0,      0,      0,      0,      0.0004, 0,      0,      0,      0.008,  0,      0.009,  0.048,  0.003,  0.065,  0.009,  0.084,
+  "phenylethanal",         0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0.002,  0,      0.0001, 0,      0.006,  0,
+  "x2_phenylethanol",      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0.008,  0.010,  0,
+  "benzene_acetonitrile",  0.173,  0,      0,      0.002,  0,      0,      0,      0.736,  0,      0,      0,      0,      0,      0,      0,      0,
+  "isocyclobazzanene",     0.128,  0.077,  0,      0.372,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "bicycloelemene",        0,      0,      0.046,  0.070,  0.070,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "a_cubebene",            0.219,  0.202,  0.039,  0,      0.052,  0.039,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "cyclosativene",         0,      0,      0.037,  0,      0.029,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "b_cubebene",            0,      0.102,  0.104,  0,      0.045,  0.041,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "a_isocomene",           0,      0,      0.062,  0,      0.039,  0.029,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "aristolene",            0,      0,      0,      0,      0,      0,      0,      0,      0.133,  0.337,  0.203,  0,      0.053,  0.095,  0.092,  0.151,
+  "cis_thujopsene",        0,      0,      0,      0,      0,      0,      0,      0,      0.039,  0,      0.091,  0,      0.020,  0.012,  0.031,  0,
+  "b_copaene",             0,      0.122,  0.032,  0.019,  0.036,  0.047,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "b_gurjunene",           0,      0,      0,      0,      0,      0,      0,      0,      0.576,  0.065,  0,      0,      0.223,  0.384,  0.385,  0.655,
+  "isobazzanene",          0,      0,      0.054,  0,      0,      0.042,  0,      0,      0,      0.016,  0,      0,      0,      0,      0,      0,
+  "trans_a_bergamotene",   0,      0,      0,      0,      0,      0,      0,      0,      0.020,  0,      0,      0.517,  0.078,  0,      0.242,  0,
+  "b_barbatene",           0.091,  0.063,  0.047,  0.280,  0,      0.362,  0,      0.088,  0,      0,      0,      0,      0,      0,      0,      0,
+  "selina_5_11_diene",     0,      0,      0.206,  0.161,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "e_b_farnesene",         0.103,  0,      0.044,  0.046,  0.038,  0.085,  0,      0.083,  0,      0,      0,      0,      0,      0,      0,      0,
+  "alloaromadendrene",     0,      0,      0,      0,      0,      0,      0,      0,      0,      0.158,  0,      0,      0.001,  0.042,  0,      0,
+  "b_neoclovene",          0,      0.037,  0.015,  0,      0.017,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "b_chamigrene",          0,      0.020,  0.014,  0,      0,      0,      0,      0,      0,      0.074,  0,      0,      0,      0,      0.023,  0,
+  "germacrene_d",          0,      0.093,  0.044,  0,      0.034,  0.069,  0,      0,      0,      0,      0,      0.034,  0,      0,      0,      0,
+  "b_selinene",            0,      0,      0,      0,      0.015,  0,      0,      0,      0.024,  0,      0.029,  0,      0,      0.018,  0.012,  0,
+  "d_selinene",            0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0.021,  0.015,  0,      0,
+  "a_selinene",            0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0.054,  0,      0,      0.029,  0.038,  0,
+  "epi_cubebol",           0,      0.059,  0,      0,      0.025,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "bicyclogermacrene",     0,      0,      0,      0,      0.025,  0,      0,      0,      0,      0.047,  0,      0.028,  0.025,  0,      0,      0,
+  "b_curcumene",           0,      0.030,  0,      0,      0.033,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "germacrene_a",          0,      0,      0,      0.052,  0,      0.038,  0,      0,      0,      0,      0,      0,      0,      0,      0.033,  0,
+  "b_bisabolene",          0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0.039,  0.057,  0.073,  0,      0,      0,
+  "d_cadinene",            0,      0,      0.173,  0,      0.143,  0.185,  0,      0,      0,      0,      0,      0.025,  0.011,  0,      0,      0,
+  "cadina_1_4_diene",      0,      0,      0.018,  0,      0,      0.017,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "d_cuprenene",           0,      0.081,  0.018,  0,      0.052,  0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,
+  "occidentalol",          0,      0,      0,      0,      0,      0,      0,      0,      0.012,  0.016,  0.010,  0.021,  0.007,  0.016,  0.005,  0,
+  "cis_muurol_5_en_4_b_ol",0,      0,      0.045,  0,      0.026,  0,      0,      0,      0,      0.026,  0,      0,      0,      0,      0,      0,
+  "viridiflorol",          0,      0,      0,      0,      0,      0,      0,      0,      0.121,  0.160,  0.122,  0.094,  0.091,  0.095,  0.019,  0.015,
+  "pogostol",              0,      0,      0,      0,      0,      0,      0,      0,      0.024,  0.053,  0.196,  0.155,  0.363,  0.220,  0.058,  0.061
+)
+
+head(voc_p1)
+```
+
+    ## # A tibble: 6 × 17
+    ##   compound     T16a  T20b  T21b  T77a   T90b  T92b  TG4b  TG5b  P19b  P20b  P38b
+    ##   <chr>       <dbl> <dbl> <dbl> <dbl>  <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+    ## 1 octen_3_ol  0.105 0.033     0     0 0.07   0.014 0.62  0.037 0.019 0.018 0.179
+    ## 2 x3_octanone 0.181 0.08      0     0 0.243  0.035 0.376 0.056 0.011 0.031 0.068
+    ## 3 x3_octanol  0     0         0     0 0.006  0     0.004 0     0     0     0    
+    ## 4 benzaldehy… 0     0         0     0 0.0004 0     0     0     0.008 0     0.009
+    ## 5 phenyletha… 0     0         0     0 0      0     0     0     0     0     0.002
+    ## 6 x2_phenyle… 0     0         0     0 0      0     0     0     0     0     0    
+    ## # ℹ 5 more variables: P57a <dbl>, P63b <dbl>, P65b <dbl>, P96a <dbl>,
+    ## #   PG4a <dbl>
+
+``` r
+cat("Compounds:", nrow(voc_p1), "\n")
+```
+
+    ## Compounds: 41
+
+``` r
+cat("Replicates:", ncol(voc_p1) - 1, "\n")
+```
+
+    ## Replicates: 16
+
+## P1.1 Transpose and label
+
+``` r
+df_p1 <- voc_p1 %>%
+  pivot_longer(cols      = -compound,
+               names_to  = "replicate",
+               values_to = "emission") %>%
+  mutate(fungi = as.factor(if_else(
+    str_starts(replicate, "T"), "Termitomyces", "Pseudoxylaria"
+  ))) %>%
+  pivot_wider(names_from = compound, values_from = emission) %>%
+  column_to_rownames("replicate") %>%
+  mutate(across(-fungi, as.numeric))
+
+cat("Replicates per group:\n")
+```
+
+    ## Replicates per group:
+
+``` r
+print(table(df_p1$fungi))
+```
+
+    ## 
+    ## Pseudoxylaria  Termitomyces 
+    ##             8             8
+
+``` r
+cat("VOC features:", ncol(df_p1) - 1, "\n")
+```
+
+    ## VOC features: 41
+
+## P1.2 Variable selection via varSelRF
+
+We repeat the original analysis from Katariya et al. (2017): `varSelRF`
+run 100 times to identify the most consistently selected minimal
+compound set.
+
+``` r
+n_cores <- detectCores() - 1
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
+
+set.seed(42)
+
+mod_p1 <- foreach(i         = 1:100,
+                  .combine  = c,
+                  .packages = "varSelRF") %dopar% {
+                    varSelRF(xdata = df_p1[, names(df_p1) != "fungi"], Class = df_p1$fungi)$selected.model
+                  }
+
+stopCluster(cl)
+registerDoSEQ()
+
+sort(summary(as.factor(mod_p1)), decreasing = TRUE)
+```
+
+    ##                pogostol + viridiflorol   aristolene + pogostol + viridiflorol 
+    ##                                     53                                     45 
+    ## benzaldehyde + pogostol + viridiflorol 
+    ##                                      2
+
+Plotting RF results identifying compounds that can explain the
+dissimilarities in the volatile profiles of the two fungi:
+
+``` r
+sort(summary(as.factor(mod_p1)), decreasing = TRUE) %>%
+  as.data.frame() %>%
+  rownames_to_column("model") %>%
+  rename(frequency = ".") %>%
+  slice_head(n = 3) %>%
+  mutate(combination = fct_reorder(paste0("Combination ", row_number()), frequency)) %>%
+  ggplot(aes(x = combination, y = frequency)) +
+  geom_col(fill = "#2E7D6B", width = 0.5) +
+  geom_text(aes(label = frequency), hjust = -0.2, size = 4) +
+  coord_flip() +
+  labs(
+    title    = "Top 3 most frequently selected compound sets",
+    subtitle = "varSelRF repeated 100 times — Termitomyces vs. Pseudoxylaria",
+    x        = NULL,
+    y        = "Number of runs selected (out of 100)",
+    caption  = "Data: Katariya et al. (2017) J. Chem. Ecol. 43:986–995"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(colour = "grey40", size = 10),
+    plot.caption  = element_text(colour = "grey50", size = 9),
+    axis.text.y   = element_text(size = 11)
+  )
+```
+
+![](figures/fig-varselrf-p1-1.png)<!-- -->
+
+Compound identities for each combination:
+
+``` r
+sort(summary(as.factor(mod_p1)), decreasing = TRUE) %>%
+  as.data.frame() %>%
+  rownames_to_column("model") %>%
+  rename(frequency = ".") %>%
+  slice_head(n = 3) %>%
+  mutate(combination = paste0("Combination ", row_number())) %>%
+  select(combination, frequency, model)
+```
+
+    ##     combination frequency                                  model
+    ## 1 Combination 1        53                pogostol + viridiflorol
+    ## 2 Combination 2        45   aristolene + pogostol + viridiflorol
+    ## 3 Combination 3         2 benzaldehyde + pogostol + viridiflorol
+
+## P1.3 Fit Random Forest on selected variables
+
+`varSelRF` identifies which compounds to include but does not produce a
+model suitable for inference. We therefore fit a full Random Forest on
+the selected variables to obtain OOB error, feature importance, and the
+proximity matrix needed for visualisation.
+
+``` r
+best_p1 <- names(sort(summary(as.factor(mod_p1)), decreasing = TRUE))[1]
+vars_p1  <- str_split(best_p1, " \\+ ")[[1]] %>% trimws()
+cat("Selected compounds:", paste(vars_p1, collapse = ", "), "\n")
+```
+
+    ## Selected compounds: pogostol, viridiflorol
+
+``` r
+set.seed(42)
+rf_p1 <- randomForest(
+  fungi ~ .,
+  data       = df_p1 %>% select(fungi, all_of(vars_p1)),
+  ntree      = 1000,
+  importance = TRUE,
+  proximity  = TRUE
+)
+print(rf_p1)
+```
+
+    ## 
+    ## Call:
+    ##  randomForest(formula = fungi ~ ., data = df_p1 %>% select(fungi,      all_of(vars_p1)), ntree = 1000, importance = TRUE, proximity = TRUE) 
+    ##                Type of random forest: classification
+    ##                      Number of trees: 1000
+    ## No. of variables tried at each split: 1
+    ## 
+    ##         OOB estimate of  error rate: 6.25%
+    ## Confusion matrix:
+    ##               Pseudoxylaria Termitomyces class.error
+    ## Pseudoxylaria             7            1       0.125
+    ## Termitomyces              0            8       0.000
+
+OOB error rate:
+
+``` r
+oob_p1 <- rf_p1$err.rate %>%
+  as.data.frame() %>%
+  slice_tail(n = 1) %>%
+  pull(OOB)
+cat("OOB error rate:", round(oob_p1 * 100, 1), "%\n")
+```
+
+    ## OOB error rate: 6.2 %
+
+## P1.4 Feature importance
+
+``` r
+importance(rf_p1, type = 1) %>%
+  as.data.frame() %>%
+  rownames_to_column("compound") %>%
+  rename(importance = MeanDecreaseAccuracy) %>%
+  arrange(desc(importance)) %>%
+  ggplot(aes(x = fct_reorder(compound, importance), y = importance)) +
+  geom_col(fill = "#2E7D6B", width = 0.7) +
+  coord_flip() +
+  labs(
+    title    = "VOCs discriminating Termitomyces vs. Pseudoxylaria",
+    subtitle = "Random Forest: Mean Decrease in Accuracy (permutation importance)",
+    x        = NULL,
+    y        = "Mean decrease in accuracy",
+    caption  = "Data: Katariya et al. (2017) J. Chem. Ecol. 43:986–995"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(colour = "grey40", size = 10),
+    plot.caption  = element_text(colour = "grey50", size = 9)
+  )
+```
+
+![](figures/fig-importance-p1-1.png)<!-- -->
+
+## P1.5 MDS plot
+
+``` r
+mds_p1 <- cmdscale(1 - rf_p1$proximity, k = 2) %>%
+  as.data.frame() %>%
+  rename(MDS1 = V1, MDS2 = V2) %>%
+  rownames_to_column("replicate") %>%
+  left_join(df_p1 %>% rownames_to_column("replicate") %>% select(replicate, fungi),
+            by = "replicate")
+
+fungi_colours <- c("Termitomyces" = "#1D9E75",
+                   "Pseudoxylaria" = "#D85A30")
+
+ggplot(mds_p1, aes(
+  x = MDS1,
+  y = MDS2,
+  colour = fungi,
+  label = replicate
+)) +
+  geom_point(size = 3.5, alpha = 0.85) +
+  geom_text(size = 2.8,
+            vjust = -0.8,
+            alpha = 0.7) +
+  scale_colour_manual(values = fungi_colours, name = "Fungus") +
+  labs(
+    title    = "VOC-based similarity of Termitomyces and Pseudoxylaria replicates",
+    subtitle = "MDS on Random Forest proximity matrix",
+    x        = "MDS axis 1",
+    y = "MDS axis 2",
+    caption  = "Data: Katariya et al. (2017) J. Chem. Ecol. 43:986–995"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title      = element_text(face = "bold", size = 13),
+    plot.subtitle   = element_text(colour = "grey40", size = 10),
+    plot.caption    = element_text(colour = "grey50", size = 9),
+    legend.position = "right"
+  )
+```
+
+![](figures/fig-mds-p1-1.png)<!-- -->
+
+## P1.6 Confusion matrix
+
+``` r
+rf_p1$confusion %>%
+  as.data.frame() %>%
+  rownames_to_column("true_group") %>%
+  rename(`OOB error` = class.error)
+```
+
+    ##      true_group Pseudoxylaria Termitomyces OOB error
+    ## 1 Pseudoxylaria             7            1     0.125
+    ## 2  Termitomyces             0            8     0.000
+
+## Part 1 summary
+
+- **16** replicates (8 *Termitomyces*, 8 *Pseudoxylaria*), **41** VOC
+  features.
+- `varSelRF` (100 runs) identifies **pogostol + viridiflorol** as the
+  most stable discriminating compound set — consistent with the
+  sesquiterpene-driven discrimination reported in Katariya et
+  al. (2017).
+- OOB error rate: **6.2%**.
+- The MDS plot shows clear separation of *Termitomyces* and
+  *Pseudoxylaria* replicates in VOC space, replicating Fig. 2c of the
+  original paper.
+
+------------------------------------------------------------------------
+
+# Part 2: Extension — Ascomycota vs. Basidiomycota (Guo et al. 2021)
+
+Having replicated the core finding on our own data, we now ask whether
+the same analytical framework reveals broader phylogenetic signal in VOC
+chemistry. We apply it to 39 species across two major fungal phyla using
+data from [Guo et
+al. (2021)](https://doi.org/10.1038/s42003-021-02198-8).
+
+## Data source
+
+- **Paper:** Guo et al. (2021). *Volatile organic compound patterns
+  predict fungal trophic mode and lifestyle.* Communications Biology
+  4:673.
+- **Data:** Supplementary Table S4 (GC-MS emission intensities) and
+  Table S1 (phylum assignments), available at <https://osf.io/bva2q>
+
+## P2.1 Load and prepare data
 
 ``` r
 # Download TableS4 from https://osf.io/bva2q and place in your working directory
 data_raw <- read_excel(
-  path  = "TableS4_GCMSdata.xlsx",  # change name if required
+  path  = "TableS4_GCMSdata.xlsx",
+  # change name if required
   sheet = 1,
-  skip  = 1        # row 1 is a description; row 2 becomes the header
+  skip  = 1
 )
 
 data_clean <- data_raw %>%
-  select(-matches("^Mean|^SD")) %>%   # drop summary columns
+  select(-matches("^Mean|^SD")) %>%
   clean_names() %>%
   filter(!str_detect(compounds, "^[0-9]"))  # keep named compounds only
 
@@ -99,9 +455,7 @@ head(data_clean)
     ## #   a_oryzae_31 <dbl>, a_oryzae_32 <dbl>, a_oryzae_33 <dbl>,
     ## #   a_porphyria_36 <dbl>, a_porphyria_37 <dbl>, a_porphyria_38 <dbl>, …
 
-------------------------------------------------------------------------
-
-## 2. Extract species names
+## P2.2 Extract species names
 
 ``` r
 species_names <- colnames(data_clean) %>%
@@ -124,161 +478,95 @@ species_names
     ## [37] "t_zygodesmoides"  "thz_es891"        "thz_ms8a1"        "thz_wm24a1"      
     ## [41] "u_hordei"         "u_nuda"           "v_albo_atrum"
 
-------------------------------------------------------------------------
-
-## 3. Assign phylum labels from Supplementary Table S1
-
-Phylum assignments are taken directly from Table S1 of Guo et
-al. (2021). Zygomycota species (*Mucor circinelloides*, *Mucor
-racemosus*, *Rhizopus oryzae*) are excluded — this analysis focuses on
-the Ascomycota vs. Basidiomycota comparison.
+## P2.3 Assign phylum labels
 
 ``` r
 phylum_labels <- tribble(
-  ~ species_name,
-  ~ phylum,
+  ~species_name,      ~phylum,
   # Ascomycota
-  "c_montecillanum",
-  "Ascomycota",
-  "s_macrospora",
-  "Ascomycota",
-  "a_alternata",
-  "Ascomycota",
-  "a_brassicicola",
-  "Ascomycota",
-  "a_niger",
-  "Ascomycota",
-  "a_oryzae",
-  "Ascomycota",
-  "b_cinerea",
-  "Ascomycota",
-  "b_sorokiniana",
-  "Ascomycota",
-  "c_globosum",
-  "Ascomycota",
-  "c_herbarum",
-  "Ascomycota",
-  "d_teres",
-  "Ascomycota",
-  "f_culmorum",
-  "Ascomycota",
-  "f_graminearum",
-  "Ascomycota",
-  "f_oxysporum",
-  "Ascomycota",
-  "g_candidum",
-  "Ascomycota",
-  "m_bicolor",
-  "Ascomycota",
-  "p_lilacinus",
-  "Ascomycota",
-  "p_oxalicum",
-  "Ascomycota",
-  "s_sclerotiorum",
-  "Ascomycota",
-  "t_hamatum",
-  "Ascomycota",
-  "t_reesei",
-  "Ascomycota",
-  "t_velutinum",
-  "Ascomycota",
-  "thz_es891",
-  "Ascomycota",
-  "thz_ms8a1",
-  "Ascomycota",
-  "thz_wm24a1",
-  "Ascomycota",
-  "v_albo_atrum",
-  "Ascomycota",
+  "c_montecillanum",  "Ascomycota",
+  "s_macrospora",     "Ascomycota",
+  "a_alternata",      "Ascomycota",
+  "a_brassicicola",   "Ascomycota",
+  "a_niger",          "Ascomycota",
+  "a_oryzae",         "Ascomycota",
+  "b_cinerea",        "Ascomycota",
+  "b_sorokiniana",    "Ascomycota",
+  "c_globosum",       "Ascomycota",
+  "c_herbarum",       "Ascomycota",
+  "d_teres",          "Ascomycota",
+  "f_culmorum",       "Ascomycota",
+  "f_graminearum",    "Ascomycota",
+  "f_oxysporum",      "Ascomycota",
+  "g_candidum",       "Ascomycota",
+  "m_bicolor",        "Ascomycota",
+  "p_lilacinus",      "Ascomycota",
+  "p_oxalicum",       "Ascomycota",
+  "s_sclerotiorum",   "Ascomycota",
+  "t_hamatum",        "Ascomycota",
+  "t_reesei",         "Ascomycota",
+  "t_velutinum",      "Ascomycota",
+  "thz_es891",        "Ascomycota",
+  "thz_ms8a1",        "Ascomycota",
+  "thz_wm24a1",       "Ascomycota",
+  "v_albo_atrum",     "Ascomycota",
   # Basidiomycota
-  "a_porphyria",
-  "Basidiomycota",
-  "c_glaucopus",
-  "Basidiomycota",
-  "h_annosum",
-  "Basidiomycota",
-  "l_bicolor",
-  "Basidiomycota",
-  "p_chrysosporium",
-  "Basidiomycota",
-  "p_croceum",
-  "Basidiomycota",
-  "p_placenta",
-  "Basidiomycota",
-  "p_squarrosa",
-  "Basidiomycota",
-  "t_hirsuta",
-  "Basidiomycota",
-  "t_versicolor",
-  "Basidiomycota",
-  "t_zygodesmoides",
-  "Basidiomycota",
-  "u_hordei",
-  "Basidiomycota",
-  "u_nuda",
-  "Basidiomycota"
+  "a_porphyria",      "Basidiomycota",
+  "c_glaucopus",      "Basidiomycota",
+  "h_annosum",        "Basidiomycota",
+  "l_bicolor",        "Basidiomycota",
+  "p_chrysosporium",  "Basidiomycota",
+  "p_croceum",        "Basidiomycota",
+  "p_placenta",       "Basidiomycota",
+  "p_squarrosa",      "Basidiomycota",
+  "t_hirsuta",        "Basidiomycota",
+  "t_versicolor",     "Basidiomycota",
+  "t_zygodesmoides",  "Basidiomycota",
+  "u_hordei",         "Basidiomycota",
+  "u_nuda",           "Basidiomycota"
 )
 
-cat("Ascomycota species:",
-    sum(phylum_labels$phylum == "Ascomycota"),
-    "\n")
+cat("Ascomycota species:", sum(phylum_labels$phylum == "Ascomycota"), "\n")
 ```
 
     ## Ascomycota species: 26
 
 ``` r
-cat("Basidiomycota species:",
-    sum(phylum_labels$phylum == "Basidiomycota"),
-    "\n")
+cat("Basidiomycota species:", sum(phylum_labels$phylum == "Basidiomycota"), "\n")
 ```
 
     ## Basidiomycota species: 13
 
-------------------------------------------------------------------------
-
-## 4. Filter and transpose to species x compounds format
-
-Keep only columns belonging to Ascomycota and Basidiomycota. Remove
-compounds not detected in any retained species (all-zero rows carry no
-discriminatory information).
+## P2.4 Filter and transpose
 
 ``` r
-selected_species <- phylum_labels$species_name
-
 data_selected <- data_clean %>%
-  select(compounds, starts_with(selected_species)) %>%
+  select(compounds, starts_with(phylum_labels$species_name)) %>%
   filter(if_any(-compounds, ~ .x != 0))
 
-# Transpose: rows = replicates, columns = compounds
-df_species <- data_selected %>%
-  pivot_longer(cols      = -compounds,
-               names_to  = "species",
+df_p2 <- data_selected %>%
+  pivot_longer(cols = -compounds,
+               names_to = "species",
                values_to = "emission") %>%
   mutate(species_name = str_remove(species, "_[0-9]{1,3}$")) %>%
   left_join(phylum_labels, by = "species_name") %>%
   mutate(phylum = as.factor(phylum)) %>%
   select(-species_name) %>%
-  pivot_wider(names_from  = compounds, values_from = emission) %>%
+  pivot_wider(names_from = compounds, values_from = emission) %>%
   column_to_rownames("species") %>%
   mutate(across(-phylum, as.numeric)) %>%
   clean_names()
 
-cat("Observations (replicates):", nrow(df_species), "\n")
+cat("Observations (replicates):", nrow(df_p2), "\n")
 ```
 
     ## Observations (replicates): 142
 
 ``` r
-cat("VOC features:", ncol(df_species) - 1, "\n")
+cat("VOC features:", ncol(df_p2) - 1, "\n")
 ```
 
     ## VOC features: 151
-
-``` r
-cat("Phyla compared:", paste(levels(df_species$phylum), collapse = " vs. "), "\n")
-```
-
-    ## Phyla compared: Ascomycota vs. Basidiomycota
 
 ``` r
 cat("\nReplicates per phylum:\n")
@@ -288,68 +576,43 @@ cat("\nReplicates per phylum:\n")
     ## Replicates per phylum:
 
 ``` r
-print(table(df_species$phylum))
+print(table(df_p2$phylum))
 ```
 
     ## 
     ##    Ascomycota Basidiomycota 
     ##            97            45
 
-------------------------------------------------------------------------
-
-## 5. Variable selection via varSelRF
-
-`varSelRF` iteratively eliminates the least important variables, running
-a new Random Forest at each step until a minimal discriminating set is
-found. We repeat this 100 times (as in Katariya et al. 2017) to identify
-which compound combinations are selected most consistently across runs.
-
-This is computationally intensive. We parallelise across CPU cores,
-leaving one core free to avoid system instability.
+## P2.5 Variable selection via varSelRF
 
 ``` r
-n_cores <- detectCores() - 1
-cl <- makeCluster(n_cores)
+cl <- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 
-cat("Running varSelRF across", n_cores, "cores...\n")
-```
-
-    ## Running varSelRF across 15 cores...
-
-``` r
 set.seed(42)
 
-mod1res <- foreach(i         = 1:100,
-                   .combine  = c,
-                   .packages = "varSelRF") %dopar% {
-                     varSelRF(xdata = df_species[, names(df_species) != "phylum"], Class = df_species$phylum)$selected.model
-                   }
+mod_p2 <- foreach(i         = 1:100,
+                  .combine  = c,
+                  .packages = "varSelRF") %dopar% {
+                    varSelRF(xdata = df_p2[, names(df_p2) != "phylum"], Class = df_p2$phylum)$selected.model
+                  }
 
 stopCluster(cl)
 registerDoSEQ()
 
-sort(summary(as.factor(mod1res)), decreasing = TRUE)
+sort(summary(as.factor(mod_p2)), decreasing = TRUE)
 ```
 
     ##                                          a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene 
-    ##                                                                                                                                                                                                                                                                                                 49 
+    ##                                                                                                                                                                                                                                                                                                 58 
     ## a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
-    ##                                                                                                                                                                                                                                                                                                 46 
-    ##   a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_elemene + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
-    ##                                                                                                                                                                                                                                                                                                  3 
-    ##                                                   a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene 
-    ##                                                                                                                                                                                                                                                                                                  1 
-    ##                                                        a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
-    ##                                                                                                                                                                                                                                                                                                  1
+    ##                                                                                                                                                                                                                                                                                                 42
 
-The plot below shows the three most frequently selected compound
-combinations across 100 runs. A dominant combination — selected in a
-high proportion of runs — indicates a stable, reproducible
-discriminating signal.
+Plotting RF results identifying compounds that can explain the
+dissimilarities in the volatile profiles of the two Phyla:
 
 ``` r
-sort(summary(as.factor(mod1res)), decreasing = TRUE) %>%
+sort(summary(as.factor(mod_p2)), decreasing = TRUE) %>%
   as.data.frame() %>%
   rownames_to_column("model") %>%
   rename(frequency = ".") %>%
@@ -375,12 +638,12 @@ sort(summary(as.factor(mod1res)), decreasing = TRUE) %>%
   )
 ```
 
-![](figures/fig-varselrf-1.png)<!-- -->
+![](figures/fig-varselrf-p2-1.png)<!-- -->
 
-Compound identities for each combination:
+Compound identity:
 
 ``` r
-sort(summary(as.factor(mod1res)), decreasing = TRUE) %>%
+sort(summary(as.factor(mod_p2)), decreasing = TRUE) %>%
   as.data.frame() %>%
   rownames_to_column("model") %>%
   rename(frequency = ".") %>%
@@ -390,49 +653,37 @@ sort(summary(as.factor(mod1res)), decreasing = TRUE) %>%
 ```
 
     ##     combination frequency
-    ## 1 Combination 1        49
-    ## 2 Combination 2        46
-    ## 3 Combination 3         3
+    ## 1 Combination 1        58
+    ## 2 Combination 2        42
     ##                                                                                                                                                                                                                                                                                                model
     ## 1                                          a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene
     ## 2 a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene
-    ## 3   a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_elemene + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene
 
-------------------------------------------------------------------------
-
-## 6. Fit full Random Forest on selected variables
-
-`varSelRF` identifies the minimal discriminating compound set. We
-extract the most frequently selected set (Combination 1) and fit a full
-`randomForest()` on those variables to obtain importance scores,
-proximity matrix, and OOB error.
+## P2.6 Fit Random Forest on selected variables
 
 ``` r
-best_model <- names(sort(summary(as.factor(mod1res)), decreasing = TRUE))[1]
-
-selected_vars <- str_split(best_model, " \\+ ")[[1]] %>% trimws()
-cat("Number of selected compounds:", length(selected_vars), "\n")
+best_p2  <- names(sort(summary(as.factor(mod_p2)), decreasing = TRUE))[1]
+vars_p2  <- str_split(best_p2, " \\+ ")[[1]] %>% trimws()
+cat("Number of selected compounds:", length(vars_p2), "\n")
 ```
 
     ## Number of selected compounds: 14
 
 ``` r
 set.seed(42)
-
-rf_model <- randomForest(
+rf_p2 <- randomForest(
   phylum ~ .,
-  data       = df_species %>% select(phylum, all_of(selected_vars)),
+  data       = df_p2 %>% select(phylum, all_of(vars_p2)),
   ntree      = 1000,
   importance = TRUE,
   proximity  = TRUE
 )
-
-print(rf_model)
+print(rf_p2)
 ```
 
     ## 
     ## Call:
-    ##  randomForest(formula = phylum ~ ., data = df_species %>% select(phylum,      all_of(selected_vars)), ntree = 1000, importance = TRUE,      proximity = TRUE) 
+    ##  randomForest(formula = phylum ~ ., data = df_p2 %>% select(phylum,      all_of(vars_p2)), ntree = 1000, importance = TRUE, proximity = TRUE) 
     ##                Type of random forest: classification
     ##                      Number of trees: 1000
     ## No. of variables tried at each split: 3
@@ -443,53 +694,27 @@ print(rf_model)
     ## Ascomycota            97             0         0.0
     ## Basidiomycota          9            36         0.2
 
+OOB error rate:
+
 ``` r
-oob_rate <- rf_model$err.rate %>%
+oob_p2 <- rf_p2$err.rate %>%
   as.data.frame() %>%
   slice_tail(n = 1) %>%
   pull(OOB)
-
-cat("Final OOB error rate:", round(oob_rate * 100, 1), "%\n")
+cat("OOB error rate:", round(oob_p2 * 100, 1), "%\n")
 ```
 
-    ## Final OOB error rate: 6.3 %
+    ## OOB error rate: 6.3 %
 
-------------------------------------------------------------------------
-
-## 7. Which VOCs discriminate Ascomycota from Basidiomycota?
-
-Mean Decrease in Accuracy measures how much model accuracy drops when a
-compound’s values are randomly shuffled — compounds with high scores are
-genuinely informative discriminators between the two phyla.
+## P2.7 Feature importance
 
 ``` r
-imp_df <- importance(rf_model, type = 1) %>%
+importance(rf_p2, type = 1) %>%
   as.data.frame() %>%
   rownames_to_column("compound") %>%
   rename(importance = MeanDecreaseAccuracy) %>%
-  arrange(desc(importance))
-
-imp_df
-```
-
-    ##                                  compound importance
-    ## 1                          methyl_furoate   34.92802
-    ## 2                                linalool   29.82970
-    ## 3                    oxime_methoxy_phenyl   24.51172
-    ## 4                               triacetin   22.58691
-    ## 5                             g_collidine   22.27806
-    ## 6                             duroquinone   21.77807
-    ## 7  benzoic_acid_2_4_dimethyl_methyl_ester   21.07023
-    ## 8                              a_selinene   20.94076
-    ## 9                            gymnomitrene   18.45585
-    ## 10                  x1r_trans_isolimonene   17.91518
-    ## 11                                sativen   17.65911
-    ## 12                       cadina_1_4_diene   17.36227
-    ## 13                            g_muurolene   16.01584
-    ## 14                 cis_hexahydrophthalide   15.52421
-
-``` r
-ggplot(imp_df, aes(x = fct_reorder(compound, importance), y = importance)) +
+  arrange(desc(importance)) %>%
+  ggplot(aes(x = fct_reorder(compound, importance), y = importance)) +
   geom_col(fill = "#2E7D6B", width = 0.7) +
   coord_flip() +
   labs(
@@ -507,39 +732,26 @@ ggplot(imp_df, aes(x = fct_reorder(compound, importance), y = importance)) +
   )
 ```
 
-![](figures/fig-importance-1.png)<!-- -->
+![](figures/fig-importance-p2-1.png)<!-- -->
 
-------------------------------------------------------------------------
-
-## 8. VOC-based replicate similarity (MDS)
-
-The Random Forest proximity matrix captures which replicates co-occur in
-terminal nodes most often — a non-parametric measure of similarity in
-VOC space. Multidimensional scaling (MDS) projects this into two
-dimensions, coloured by phylum. Clear separation of phyla in MDS space
-would indicate that VOC profiles reliably encode phylogenetic identity —
-consistent with the principle demonstrated in Katariya et al. (2017).
+## P2.8 MDS plot
 
 ``` r
-mds_coords <- cmdscale(1 - rf_model$proximity, k = 2)
-
-mds_df <- mds_coords %>%
+mds_p2 <- cmdscale(1 - rf_p2$proximity, k = 2) %>%
   as.data.frame() %>%
   rename(MDS1 = V1, MDS2 = V2) %>%
   rownames_to_column("species") %>%
-  left_join(df_species %>%
-              rownames_to_column("species") %>%
-              select(species, phylum),
+  left_join(df_p2 %>% rownames_to_column("species") %>% select(species, phylum),
             by = "species")
 
 phylum_colours <- c("Ascomycota" = "#D85A30",
                     "Basidiomycota" = "#1D9E75")
 
-ggplot(mds_df, aes(
+ggplot(mds_p2, aes(
   x = MDS1,
   y = MDS2,
   colour = phylum,
-  label  = species
+  label = species
 )) +
   geom_point(size = 3.5, alpha = 0.85) +
   geom_text(size = 2.6,
@@ -550,7 +762,7 @@ ggplot(mds_df, aes(
     title    = "VOC-based similarity of fungal replicates by phylum",
     subtitle = "MDS on Random Forest proximity matrix",
     x        = "MDS axis 1",
-    y        = "MDS axis 2",
+    y = "MDS axis 2",
     caption  = "Data: Guo et al. (2021) Commun. Biol. 4:673"
   ) +
   theme_minimal(base_size = 12) +
@@ -562,18 +774,12 @@ ggplot(mds_df, aes(
   )
 ```
 
-![](figures/fig-mds-1.png)<!-- -->
+![](figures/fig-mds-p2-1.png)<!-- -->
 
-------------------------------------------------------------------------
-
-## 9. Robustness check: confusion matrix
-
-The confusion matrix reveals whether misclassification is symmetric
-across phyla or concentrated in one direction — important context for
-interpreting the OOB error rate.
+## P2.9 Confusion matrix
 
 ``` r
-rf_model$confusion %>%
+rf_p2$confusion %>%
   as.data.frame() %>%
   rownames_to_column("true_phylum") %>%
   rename(`OOB error` = class.error)
@@ -583,19 +789,27 @@ rf_model$confusion %>%
     ## 1    Ascomycota         97             0       0.0
     ## 2 Basidiomycota          9            36       0.2
 
-------------------------------------------------------------------------
-
-## Summary
+## Part 2 summary
 
 - Phyla compared: **Ascomycota** (97 replicates) vs. **Basidiomycota**
   (45 replicates).
-- `varSelRF` repeated 100 times identified a stable minimal set of
-  discriminating VOCs (Combination 1 in the plot above).
-- A Random Forest model fit on the selected compounds achieved an OOB
-  error rate of **6.3%**.
-- The MDS proximity plot shows whether replicates cluster by phylum in
-  VOC space — consistent with the principle demonstrated in Katariya et
-  al. (2017): that biological identity is encoded in volatile chemistry.
+- `varSelRF` (100 runs) identified a stable minimal discriminating
+  compound set (Combination 1 above).
+- OOB error rate: **6.3%**.
+- The MDS plot shows whether replicates cluster by phylum in VOC space.
+
+------------------------------------------------------------------------
+
+## Overall conclusion
+
+The Random Forest framework developed in Katariya et al. (2017) to
+identify “weedy scent” compounds in a termite mutualism generalises
+beyond the original system. In Part 1, the replication on published data
+confirms that sesquiterpene compounds reliably discriminate
+*Termitomyces* from *Pseudoxylaria*. In Part 2, applying the same
+framework to 39 species across two phyla shows that VOC chemistry
+carries broader phylogenetic signal — suggesting that volatile profiles
+encode biological identity at multiple taxonomic levels.
 
 ------------------------------------------------------------------------
 
