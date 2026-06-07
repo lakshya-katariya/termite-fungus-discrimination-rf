@@ -1,59 +1,54 @@
-# Fungal VOC profiles discriminate between phyla: a Random Forest approach
+# Can you smell the difference? Identifying fungal discriminating volatiles using Random Forest classification
 
-Can a fungus's scent reveal what kind of organism it is?
-
-This repo applies Random Forest classification to gas chromatography–mass
-spectrometry (GC-MS) volatile organic compound (VOC) profiles from 43 fungal
-species to ask whether VOC emissions systematically differ between
-***Ascomycota*** and ***Basidiomycota*** — and which specific compounds drive that
-discrimination.
+Fungi communicate chemically through volatile organic compounds (VOCs). This repo asks: can VOC profiles alone reveal what kind of fungus is emitting them — and which specific compounds carry the discriminatory signal?
 
 📄 **[View the full analysis](fungal_voc_random_forest.md)**
 
 ---
 
-## Scientific background
+## Structure
 
-This analysis replicates the analytical approach of:
+The analysis has two parts that build on each other:
 
-> Katariya L, Ramesh PB, Gopalappa T et al. (2017). *Fungus-Farming Termites
-> Selectively Bury Weedy Fungi that Smell Different from Crop Fungi.*
-> Journal of Chemical Ecology 43:986–995.
-> [https://doi.org/10.1007/s10886-017-0902-4](https://doi.org/10.1007/s10886-017-0902-4)
+**Part 1 — Replication** replicates the Random Forest analysis from
+[Katariya et al. (2017)](https://doi.org/10.1007/s10886-017-0902-4) using
+the published supplementary data from that paper. In the original study, we
+showed that fungus-farming termites discriminate their crop fungus
+(*Termitomyces*) from a parasitic weed (*Pseudoxylaria*) using VOC profiles
+alone — without visual contact. Here we reproduce that analysis to confirm
+that the key discriminating compounds are stably selected across 100
+`varSelRF` runs.
 
-In that study, we showed that fungus-farming termites discriminate their
-crop fungus (*Termitomyces*) from a parasitic weed (*Pseudoxylaria*) using
-VOC profiles alone — without visual contact. Random Forest classification on
-GC-MS chemical profiles identified the candidate volatile compounds driving
-that discrimination.
-
-Here I apply the same framework to a broader public dataset to ask whether
-phylogenetic identity (phylum) is similarly encoded in fungal VOC chemistry.
+**Part 2 — Extension** applies the same analytical framework to a broader
+public dataset from [Guo et al. (2021)](https://doi.org/10.1038/s42003-021-02198-8),
+asking whether VOC profiles discriminate **Ascomycota** from
+**Basidiomycota** across 39 fungal species. This tests whether the
+chemical discrimination signal observed at the species level in Part 1
+generalises to the phylum level.
 
 ---
 
 ## Data
 
-- **Source:** Guo et al. (2021). *Volatile organic compound patterns predict
-  fungal trophic mode and lifestyle.* Communications Biology 4:673.
-  [https://doi.org/10.1038/s42003-021-02198-8](https://doi.org/10.1038/s42003-021-02198-8)
-- **Data:** Supplementary Table S4 (GC-MS emission intensities) and Table S1
-  (species metadata including phylum), available at
-  [https://osf.io/bva2q](https://osf.io/bva2q) under CC-BY 4.0.
-- **Species:** 39 species retained after excluding Zygomycota
-  (26 Ascomycota, 13 Basidiomycota)
-- **Features:** Named volatile compounds only (m/z-only entries excluded)
+| Part | Source | Data |
+|------|--------|------|
+| Part 1 | Katariya et al. (2017). *J. Chem. Ecol.* 43:986–995 | Supplementary Table S1 (41 VOCs, 16 replicates) — embedded in script |
+| Part 2 | Guo et al. (2021). *Commun. Biol.* 4:673 | Supplementary Table S4 ([osf.io/bva2q](https://osf.io/bva2q), CC-BY 4.0) |
+
+> Part 1 data is entered directly in the script — no download needed.
+> Part 2 requires downloading `TableS4_GCMSdata.xlsx` from the link above.
 
 ---
 
 ## Methods
 
-| Step | Approach | Rationale |
-|------|----------|-----------|
-| Variable selection | `varSelRF` repeated 100 times | Identifies minimal stable discriminating compound set across runs |
-| Classification | `randomForest` on selected variables | Obtains OOB error, feature importance, proximity matrix |
-| Importance metric | Mean Decrease in Accuracy | Measures genuine compound contribution, not spurious correlation |
-| Visualisation | MDS on RF proximity matrix | Non-parametric species similarity in VOC space |
+| Step | Tool | Purpose |
+|------|------|---------|
+| Variable selection | `varSelRF` × 100 runs | Identifies the minimal stable set of discriminating compounds |
+| Classification | `randomForest` on selected variables | Obtains OOB error, permutation importance, proximity matrix |
+| Importance metric | Mean Decrease in Accuracy | Measures how much accuracy drops when each compound is randomly shuffled |
+| Ordination | MDS on RF proximity matrix | Non-parametric visualisation of similarity in VOC space |
+| Parallelisation | `doParallel` + `foreach` | Distributes 100 `varSelRF` runs across CPU cores |
 
 ---
 
@@ -63,9 +58,12 @@ phylogenetic identity (phylum) is similarly encoded in fungal VOC chemistry.
 ├── fungal_voc_random_forest.Rmd   # source — edit and knit here
 ├── fungal_voc_random_forest.md    # rendered output — view on GitHub
 └── figures/                       # auto-generated plots
-    ├── fig-varselrf-1.png         # varSelRF stability plot
-    ├── fig-importance-1.png       # feature importance plot
-    └── fig-mds-1.png              # MDS proximity plot
+    ├── fig-varselrf-p1-1.png      # Part 1: varSelRF stability
+    ├── fig-importance-p1-1.png    # Part 1: feature importance
+    ├── fig-mds-p1-1.png           # Part 1: MDS proximity plot
+    ├── fig-varselrf-p2-1.png      # Part 2: varSelRF stability
+    ├── fig-importance-p2-1.png    # Part 2: feature importance
+    └── fig-mds-p2-1.png           # Part 2: MDS proximity plot
 ```
 
 ---
@@ -73,18 +71,21 @@ phylogenetic identity (phylum) is similarly encoded in fungal VOC chemistry.
 ## How to reproduce
 
 1. Download `TableS4_GCMSdata.xlsx` from [osf.io/bva2q](https://osf.io/bva2q)
-   and place it in the same directory as the `.Rmd` file
+   and place it in the same directory as the `.Rmd` file.
+   Part 1 data is embedded directly in the script.
+
 2. Install required packages:
 ```r
 install.packages(c("tidyverse", "readxl", "randomForest",
                    "varSelRF", "janitor", "parallel",
                    "doParallel", "foreach"))
 ```
+
 3. Open `fungal_voc_random_forest.Rmd` in RStudio and click **Knit**
 
-> **Note:** The `varSelRF` chunk is parallelised across available CPU cores
-> and cached after the first run (`cache=TRUE`). Expect 5–15 minutes on first
-> knit depending on your machine.
+> **Note:** Both `varSelRF` chunks are parallelised across available CPU
+> cores and cached after the first run (`cache=TRUE`). Expect 10–20 minutes
+> on first knit depending on your machine.
 
 ---
 
