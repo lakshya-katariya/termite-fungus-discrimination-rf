@@ -27,7 +27,7 @@ This document has two parts:
   vs. Basidiomycota) across 39 species.
 
 Random Forest is used throughout as a classification tool — the goal
-here is simpler - identify candidate discriminating compounds (not to
+here is simpler — identify candidate discriminating compounds (not to
 build a predictive model for deployment).
 
 ------------------------------------------------------------------------
@@ -59,7 +59,7 @@ VOC emission data are taken from Supplementary Table S1 of:
 
 The table reports proportional VOC emission intensities for 8
 *Termitomyces* replicates (crop fungus) and 8 *Pseudoxylaria* replicates
-(weedy fungus), across 40 identified volatile compounds from a
+(weedy fungus), across 41 identified volatile compounds from a
 representative GC-MS dataset (dataset \#7 in the paper). The original
 analysis used 16 datasets; this replication uses dataset \#7 as a
 representative example, consistent with the paper’s Fig. 2c.
@@ -199,10 +199,10 @@ registerDoSEQ()
 sort(summary(as.factor(mod_p1)), decreasing = TRUE)
 ```
 
-    ##                pogostol + viridiflorol   aristolene + pogostol + viridiflorol 
-    ##                                     53                                     45 
+    ##   aristolene + pogostol + viridiflorol                pogostol + viridiflorol 
+    ##                                     56                                     43 
     ## benzaldehyde + pogostol + viridiflorol 
-    ##                                      2
+    ##                                      1
 
 Plotting RF results identifying compounds that can explain the
 dissimilarities in the volatile profiles of the two fungi:
@@ -249,9 +249,9 @@ sort(summary(as.factor(mod_p1)), decreasing = TRUE) %>%
 ```
 
     ##     combination frequency                                  model
-    ## 1 Combination 1        53                pogostol + viridiflorol
-    ## 2 Combination 2        45   aristolene + pogostol + viridiflorol
-    ## 3 Combination 3         2 benzaldehyde + pogostol + viridiflorol
+    ## 1 Combination 1        56   aristolene + pogostol + viridiflorol
+    ## 2 Combination 2        43                pogostol + viridiflorol
+    ## 3 Combination 3         1 benzaldehyde + pogostol + viridiflorol
 
 ## P1.3 Fit Random Forest on selected variables
 
@@ -266,7 +266,7 @@ vars_p1  <- str_split(best_p1, " \\+ ")[[1]] %>% trimws()
 cat("Selected compounds:", paste(vars_p1, collapse = ", "), "\n")
 ```
 
-    ## Selected compounds: pogostol, viridiflorol
+    ## Selected compounds: aristolene, pogostol, viridiflorol
 
 ``` r
 set.seed(42)
@@ -287,11 +287,11 @@ print(rf_p1)
     ##                      Number of trees: 1000
     ## No. of variables tried at each split: 1
     ## 
-    ##         OOB estimate of  error rate: 6.25%
+    ##         OOB estimate of  error rate: 0%
     ## Confusion matrix:
     ##               Pseudoxylaria Termitomyces class.error
-    ## Pseudoxylaria             7            1       0.125
-    ## Termitomyces              0            8       0.000
+    ## Pseudoxylaria             8            0           0
+    ## Termitomyces              0            8           0
 
 OOB error rate:
 
@@ -303,7 +303,7 @@ oob_p1 <- rf_p1$err.rate %>%
 cat("OOB error rate:", round(oob_p1 * 100, 1), "%\n")
 ```
 
-    ## OOB error rate: 6.2 %
+    ## OOB error rate: 0 %
 
 ## P1.4 Feature importance
 
@@ -385,18 +385,18 @@ rf_p1$confusion %>%
 ```
 
     ##      true_group Pseudoxylaria Termitomyces OOB error
-    ## 1 Pseudoxylaria             7            1     0.125
-    ## 2  Termitomyces             0            8     0.000
+    ## 1 Pseudoxylaria             8            0         0
+    ## 2  Termitomyces             0            8         0
 
 ## Part 1 summary
 
 - **16** replicates (8 *Termitomyces*, 8 *Pseudoxylaria*), **41** VOC
   features.
-- `varSelRF` (100 runs) identifies **pogostol + viridiflorol** as the
-  most stable discriminating compound set — consistent with the
-  sesquiterpene-driven discrimination reported in Katariya et
-  al. (2017).
-- OOB error rate: **6.2%**.
+- `varSelRF` (100 runs) identifies **aristolene + pogostol +
+  viridiflorol** as the most stable discriminating compound set —
+  consistent with the sesquiterpene-driven discrimination reported in
+  Katariya et al. (2017).
+- OOB error rate: **0%**.
 - The MDS plot shows clear separation of *Termitomyces* and
   *Pseudoxylaria* replicates in VOC space, replicating Fig. 2c of the
   original paper.
@@ -604,9 +604,13 @@ sort(summary(as.factor(mod_p2)), decreasing = TRUE)
 ```
 
     ##                                          a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene 
-    ##                                                                                                                                                                                                                                                                                                 58 
+    ##                                                                                                                                                                                                                                                                                                 61 
     ## a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
-    ##                                                                                                                                                                                                                                                                                                 42
+    ##                                                                                                                                                                                                                                                                                                 37 
+    ##     a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_elemene + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
+    ##                                                                                                                                                                                                                                                                                                  1 
+    ##   a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_elemene + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene 
+    ##                                                                                                                                                                                                                                                                                                  1
 
 Plotting RF results identifying compounds that can explain the
 dissimilarities in the volatile profiles of the two Phyla:
@@ -653,11 +657,13 @@ sort(summary(as.factor(mod_p2)), decreasing = TRUE) %>%
 ```
 
     ##     combination frequency
-    ## 1 Combination 1        58
-    ## 2 Combination 2        42
+    ## 1 Combination 1        61
+    ## 2 Combination 2        37
+    ## 3 Combination 3         1
     ##                                                                                                                                                                                                                                                                                                model
     ## 1                                          a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene
     ## 2 a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_muurolene + gymnomitrene + linalool + methyl_furoate + monoterpene_4 + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene
+    ## 3     a_muurolene + a_selinene + benzoic_acid_2_4_dimethyl_methyl_ester + cadina_1_4_diene + cis_hexahydrophthalide + duroquinone + g_collidine + g_elemene + g_muurolene + gymnomitrene + linalool + methyl_furoate + oxime_methoxy_phenyl + sativen + triacetin + x1r_trans_isolimonene + ylangene
 
 ## P2.6 Fit Random Forest on selected variables
 
